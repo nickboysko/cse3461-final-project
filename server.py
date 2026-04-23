@@ -5,7 +5,7 @@ HOST = "127.0.0.1"
 PORT = 5555
 
 # List to store all connected client sockets
-clients = []
+clients = {}
 clients_lock = threading.Lock()
 
 
@@ -16,7 +16,7 @@ def broadcast(message, sender_socket):
     with clients_lock:
         disconnected_clients = []
 
-        for client in clients:
+        for client in clients.values():
             if client != sender_socket:
                 try:
                     client.send(message)
@@ -26,8 +26,7 @@ def broadcast(message, sender_socket):
         # Remove any clients that disconnected during broadcast
         for client in disconnected_clients:
             if client in clients:
-                clients.remove(client)
-                client.close()
+                del clients[client]
 
 
 def handle_client(client_socket, client_address):
@@ -35,7 +34,14 @@ def handle_client(client_socket, client_address):
     Handle communication for one client.
     Runs in its own thread.
     """
-    print(f"[NEW CONNECTION] {client_address} connected.")
+
+    # first message from client will be username
+    username = client_socket.recv(1024).decode("utf-8").strip()
+
+    with clients_lock:
+        clients[username] = client_socket
+
+    print(f"[NEW CONNECTION] {client_address} is {username}")
 
     try:
         while True:
@@ -45,7 +51,26 @@ def handle_client(client_socket, client_address):
                 break
 
             decoded_message = message.decode("utf-8")
-            print(f"[MESSAGE FROM {client_address}] {decoded_message}")
+
+            if decoded_message.startswith("@"):
+                try:
+                    target_name, private_msg = decoded_message.split(" ", 1)
+                    target_name = target_name[1:]
+
+                    with clients_lock:
+                        target_socket = clients.get(target_name, "n")
+
+                    if target_socket != "n":
+                        formatted = f"[PRIVATE] {username}: {private_msg}"
+                        target_socket.send(formatted.encode("utf-8"))
+                    else:
+                        client_socket.send(f"User '{target_name}' not found.".encode("utf-8"))
+
+                except ValueError:
+                    client_socket.send("Invalid private message format.".encode("utf-8"))
+                continue
+
+            print(f"[MESSAGE FROM {username}] {decoded_message}")
 
             # Send message to all other clients
             broadcast(message, client_socket)
@@ -54,10 +79,10 @@ def handle_client(client_socket, client_address):
         print(f"[ERROR] Problem with {client_address}: {e}")
 
     finally:
-        print(f"[DISCONNECTED] {client_address} disconnected.")
+        print(f"[DISCONNECTED] {username} disconnected.")
         with clients_lock:
-            if client_socket in clients:
-                clients.remove(client_socket)
+            if username in clients:
+                del clients[username]
         client_socket.close()
 
 
@@ -73,9 +98,6 @@ def start_server():
 
     while True:
         client_socket, client_address = server.accept()
-
-        with clients_lock:
-            clients.append(client_socket)
 
         thread = threading.Thread(
             target=handle_client,

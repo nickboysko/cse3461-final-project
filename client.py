@@ -23,8 +23,9 @@ def start_client():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((HOST, PORT))
 
+    # send username to handler
     name = input("Enter your display name: ")
-
+    client.send(name.encode("utf-8"))
     print(f"Connected to server at {HOST}:{PORT}")
     print(f"Local socket info: {client.getsockname()}")
 
@@ -38,7 +39,7 @@ def start_client():
     try:
         while True:
             message = input()
-            full_message = f"{name}: {message}"
+            full_message = f"{message}"
             client.send(full_message.encode("utf-8"))
     except KeyboardInterrupt:
         print("\nClosing connection...")
