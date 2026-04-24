@@ -25,7 +25,7 @@ def receive_messages(client_socket):
                 break
 
             # Display received message
-            print("\n" + message.decode("utf-8"))
+            print(message.decode("utf-8"))
         except:
             print("Connection to server lost.")
             break
