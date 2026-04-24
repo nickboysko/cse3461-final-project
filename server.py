@@ -38,14 +38,27 @@ def broadcast(message, sender_socket):
             if client in clients:
                 del clients[client]
 
+# Simple bool check for username in dictionary.
+def unique_username(username):
+    with clients_lock:
+        if username in clients.keys():
+            return False
+        else:
+            return True
 
 def handle_client(client_socket, client_address):
     """
     Handle one client connection in its own thread.
     """
 
-    # Receive the username as the first message
-    username = client_socket.recv(1024).decode("utf-8").strip()
+    # Receive the username as the first message. Server checks in dictionary for duplicates.
+    while True:
+        username = client_socket.recv(1024).decode("utf-8").strip()
+        if not unique_username(username):
+            client_socket.send("not available".encode("utf-8"))
+        else:
+            client_socket.send("available".encode("utf-8"))
+            break
 
     with clients_lock:
         clients[username] = client_socket

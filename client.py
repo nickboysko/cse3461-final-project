@@ -36,9 +36,17 @@ def start_client():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((HOST, PORT))
 
-    # Send username to server
-    name = input("Enter your display name: ")
-    client.send(name.encode("utf-8"))
+    # Send username to server, server will check if name is available
+    while True:
+        name = input("Enter your display name: ")
+        client.send(name.encode("utf-8"))
+        verification = client.recv(1024).decode("utf-8").strip()
+        if verification != "available":
+            print("Username already taken. Please try again.")
+        else:
+            break
+
+
     print(f"Connected to server at {HOST}:{PORT}")
     print(f"Local socket info: {client.getsockname()}")
 
