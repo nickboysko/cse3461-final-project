@@ -1,3 +1,13 @@
+"""
+client.py - Feature 1 & 2: Plaintext Chat Client
+
+Connects to the plaintext chat server and sends/receives messages.
+Supports broadcast messages and private messaging with @username syntax.
+
+Usage:
+    python client.py
+"""
+
 import socket
 import threading
 
@@ -6,6 +16,7 @@ PORT = 5555
 
 
 def receive_messages(client_socket):
+    """Background thread that listens for incoming messages."""
     while True:
         try:
             message = client_socket.recv(1024)
@@ -13,6 +24,7 @@ def receive_messages(client_socket):
                 print("Disconnected from server.")
                 break
 
+            # Display received message
             print("\n" + message.decode("utf-8"))
         except:
             print("Connection to server lost.")
@@ -20,15 +32,17 @@ def receive_messages(client_socket):
 
 
 def start_client():
+    """Main client loop that connects and handles user input."""
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((HOST, PORT))
 
-    # send username to handler
+    # Send username to server
     name = input("Enter your display name: ")
     client.send(name.encode("utf-8"))
     print(f"Connected to server at {HOST}:{PORT}")
     print(f"Local socket info: {client.getsockname()}")
 
+    # Start background thread to receive messages
     receive_thread = threading.Thread(
         target=receive_messages,
         args=(client,),
@@ -37,10 +51,10 @@ def start_client():
     receive_thread.start()
 
     try:
+        # Main loop: get user input and send to server
         while True:
             message = input()
-            full_message = f"{message}"
-            client.send(full_message.encode("utf-8"))
+            client.send(message.encode("utf-8"))
     except KeyboardInterrupt:
         print("\nClosing connection...")
     finally:

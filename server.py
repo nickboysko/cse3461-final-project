@@ -1,17 +1,28 @@
+"""
+server.py - Feature 1 & 2: Plaintext Chat Server
+
+Handles multiple clients with broadcast and private messaging.
+Messages are sent as plaintext over TCP.
+
+Usage:
+    python server.py
+"""
+
+from http import server
 import socket
 import threading
 
 HOST = "127.0.0.1"
 PORT = 5555
 
-# List to store all connected client sockets
+# Dictionary to track connected clients: username -> socket
 clients = {}
 clients_lock = threading.Lock()
 
 
 def broadcast(message, sender_socket):
     """
-    Send a message to every connected client except the sender.
+    Send a message to all clients except the sender.
     """
     with clients_lock:
         disconnected_clients = []
@@ -23,7 +34,7 @@ def broadcast(message, sender_socket):
                 except:
                     disconnected_clients.append(client)
 
-        # Remove any clients that disconnected during broadcast
+        # Clean up clients that failed to receive the message
         for client in disconnected_clients:
             if client in clients:
                 del clients[client]
@@ -31,11 +42,10 @@ def broadcast(message, sender_socket):
 
 def handle_client(client_socket, client_address):
     """
-    Handle communication for one client.
-    Runs in its own thread.
+    Handle one client connection in its own thread.
     """
 
-    # first message from client will be username
+    # Receive the username as the first message
     username = client_socket.recv(1024).decode("utf-8").strip()
 
     with clients_lock:
@@ -93,19 +103,28 @@ def start_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((HOST, PORT))
     server.listen()
+    server.settimeout(1.0)
 
     print(f"[LISTENING] Server is listening on {HOST}:{PORT}")
+    # Added logic to handle Crtl-C
+    try:
+        while True:
+            try:
+                client_socket, client_address = server.accept()
+            except socket.timeout:
+                continue
 
-    while True:
-        client_socket, client_address = server.accept()
+            thread = threading.Thread(
+                target=handle_client,
+                args=(client_socket, client_address)
+            )
+            thread.start()
+            print(f"[ACTIVE CONNECTIONS] {threading.active_count() - 1}")
 
-        thread = threading.Thread(
-            target=handle_client,
-            args=(client_socket, client_address)
-        )
-        thread.start()
-
-        print(f"[ACTIVE CONNECTIONS] {threading.active_count() - 1}")
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+    finally:
+        server.close()
 
 
 if __name__ == "__main__":
