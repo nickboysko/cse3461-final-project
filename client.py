@@ -62,6 +62,9 @@ def start_client():
         # Main loop: get user input and send to server
         while True:
             message = input()
+            if message == "/exit":
+                print("Exiting...")
+                return
             client.send(message.encode("utf-8"))
     except KeyboardInterrupt:
         print("\nClosing connection...")
