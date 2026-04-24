@@ -33,13 +33,18 @@ def receive_messages(client_socket):
 
 def start_client():
     """Main client loop that connects and handles user input."""
+    # Ask for the IP, but default to localhost if they just press Enter
+    server_ip = input("Enter server IP (press Enter for localhost): ").strip()
+    if not server_ip:
+        server_ip = "127.0.0.1"
+        
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((HOST, PORT))
+    client.connect((server_ip, PORT))
 
     # Send username to server
     name = input("Enter your display name: ")
     client.send(name.encode("utf-8"))
-    print(f"Connected to server at {HOST}:{PORT}")
+    print(f"Connected to server at {server_ip}:{PORT}")
     print(f"Local socket info: {client.getsockname()}")
 
     # Start background thread to receive messages

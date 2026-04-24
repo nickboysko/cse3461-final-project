@@ -33,10 +33,24 @@ from encryption_utils import (
     recv_frame,
     EncryptionMetrics,
 )
-import server
 
-HOST = "127.0.0.1"
+
+HOST = "0.0.0.0"  # Listen on all interfaces
 PORT = 5556  # different port so it coexists with the plaintext server
+
+def get_local_ip():
+    """Extracts the actual local IP address of the machine."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # We don't actually connect to 10.255.255.255, 
+        # but this forces the socket to figure out its routing IP.
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
 
 # username to socket mapping, protected by a lock for thread safety
 clients: dict[str, socket.socket] = {}
@@ -93,6 +107,21 @@ def handle_client(client_socket: socket.socket, client_address: tuple):
     username, dec_ms = decrypt(name_frame)
     username = username.strip()
 
+    # If username is taken, ask the client to pick another until it's unique
+    while username in clients:
+        with clients_lock:
+            online = list(clients.keys())
+        prompt_frame, enc_ms, pl, cl = encrypt(
+            f"[SERVER] '{username}' is already taken. Online users: {', '.join(online)}. Enter a new name:"
+        )
+        client_socket.sendall(prompt_frame)
+        name_frame = recv_frame(client_socket)
+        if name_frame is None:
+            client_socket.close()
+            return
+        username, dec_ms = decrypt(name_frame)
+        username = username.strip()
+
     # Track per-client metrics
     client_metrics = EncryptionMetrics()
     client_metrics.record_decrypt(dec_ms)
@@ -121,6 +150,22 @@ def handle_client(client_socket: socket.socket, client_address: tuple):
             decoded_msg, dec_ms = decrypt(frame)
             client_metrics.record_decrypt(dec_ms)
 
+            # Handle /users command: send the requesting client a list of who's online
+            if decoded_msg.strip() == "/users":
+                with clients_lock:
+                    online = list(clients.keys())
+                user_list = "[SERVER] Online users: " + ", ".join(online)
+                reply_frame, enc_ms, pl, cl = encrypt(user_list)
+                client_socket.sendall(reply_frame)
+                with server_metrics_lock:
+                    server_metrics.record_encrypt(enc_ms, pl, cl)
+                continue
+
+            # Handle /quit command: client is asking to leave gracefully
+            if decoded_msg.strip() == "/quit":
+                print(f"[QUIT] {username} sent /quit")
+                break
+            
             # Private message format: @target_user message text
             if decoded_msg.startswith("@"):
                 try:
@@ -207,12 +252,30 @@ def start_server():
     server.listen()
     server.settimeout(1.0)
 
-    print(f"[SECURE SERVER] Listening on {HOST}:{PORT}")
+    print(f"[SECURE SERVER] Listening on all interfaces (0.0.0.0:{PORT})")
+    print(f"[SECURE SERVER] Tell clients to connect to IP: {get_local_ip()}")
     print(f"[SECURE SERVER] Transport: AES-256-CBC with random IV per message")
     print(f"[SECURE SERVER] Key length: {len(__import__('encryption_utils').SECRET_KEY)*8} bits\n")
-     # Added logic to handle Crtl-C 
+    # Added logic to handle Crtl-C 
+
+    # Background thread that lets you type /quit in the server terminal to shut down
+    shutdown_event = threading.Event()
+
+    def console_listener():
+        while not shutdown_event.is_set():
+            try:
+                cmd = input()
+                if cmd.strip() == "/quit":
+                    print("[SECURE SERVER] /quit received, shutting down...")
+                    shutdown_event.set()
+            except EOFError:
+                break
+
+    console_thread = threading.Thread(target=console_listener, daemon=True)
+    console_thread.start()
+     
     try:
-        while True:
+        while not shutdown_event.is_set():
             try:
                 client_socket, client_address = server.accept()
             except socket.timeout:
