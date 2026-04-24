@@ -8,7 +8,6 @@ Usage:
     python server.py
 """
 
-from http import server
 import socket
 import threading
 
@@ -53,6 +52,10 @@ def handle_client(client_socket, client_address):
 
     print(f"[NEW CONNECTION] {client_address} is {username}")
 
+    # Notify all other clients that a new user joined
+    join_msg = f"[SERVER] '{username}' has joined the chat."
+    broadcast(join_msg.encode("utf-8"), client_socket)
+
     try:
         while True:
             message = client_socket.recv(1024)
@@ -82,8 +85,8 @@ def handle_client(client_socket, client_address):
 
             print(f"[MESSAGE FROM {username}] {decoded_message}")
 
-            # Send message to all other clients
-            broadcast(message, client_socket)
+            # Add the sender's name and broadcast to all other clients
+            broadcast(f"{username}: {decoded_message}".encode("utf-8"), client_socket)
 
     except Exception as e:
         print(f"[ERROR] Problem with {client_address}: {e}")
@@ -93,6 +96,11 @@ def handle_client(client_socket, client_address):
         with clients_lock:
             if username in clients:
                 del clients[username]
+        
+        # Notify all other clients that this user left
+        leave_msg = f"[SERVER] '{username}' has left the chat."
+        broadcast(leave_msg.encode("utf-8"), client_socket)
+        
         client_socket.close()
 
 
