@@ -38,19 +38,26 @@ def broadcast(message, sender_socket):
             if client in clients:
                 del clients[client]
 
-def private_message(message, target, client_socket, username):
+"""
+Privately send a message to a user
+message - the message to be sent
+target - the user to receive. function will find socket from dictionary
+username - to show where message comes from
+"""
+def private_message(message, target, sender):
     try:
         with clients_lock:
+            sender_socket = clients.get(sender)
             target_socket = clients.get(target, "n")
 
         if target_socket != "n":
-            formatted = f"[PRIVATE] {username}: {message}"
+            formatted = f"[PRIVATE] {sender}: {message}"
             target_socket.send(formatted.encode("utf-8"))
         else:
-            client_socket.send(f"User '{target}' not found.".encode("utf-8"))
+            sender_socket.send(f"User '{target}' not found.".encode("utf-8"))
 
     except ValueError:
-        client_socket.send("Invalid private message format.".encode("utf-8"))
+        sender_socket.send("Invalid private message format.".encode("utf-8"))
 
 # Simple bool check for username in dictionary.
 def unique_username(username):
@@ -96,16 +103,16 @@ def handle_client(client_socket, client_address):
                 target_name, private_msg = decoded_message.split(" ", 1)
                 target_name = target_name[1:]
 
-                private_message(private_msg, target_name, client_socket, username)
+                private_message(private_msg, target_name, username)
             elif decoded_message == "/users":
                 formatted = f"[COMMAND] {username}: Users"
                 print(formatted)
 
-                private_message("User list:", username, client_socket, username)
+                private_message("User list:", username, username)
                 with clients_lock:
                     names = list(clients.keys())
                 for name in names:
-                    private_message(name, username, client_socket, username)
+                    private_message(name, username, username)
             else:
                 print(f"[MESSAGE FROM {username}] {decoded_message}")
 
