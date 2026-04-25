@@ -39,11 +39,11 @@ HOST = "0.0.0.0"  # Listen on all interfaces
 PORT = 5556  # different port so it coexists with the plaintext server
 
 def get_local_ip():
-    """Extracts the actual local IP address of the machine."""
+    """Tries to get the actual local IP address of the machine."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # We don't actually connect to 10.255.255.255, 
-        # but this forces the socket to figure out its routing IP.
+        # We send a dummy packet to figure out which network interface
+        # would be used for outgoing traffic
         s.connect(('10.255.255.255', 1))
         IP = s.getsockname()[0]
     except Exception:
@@ -61,12 +61,12 @@ server_metrics = EncryptionMetrics()
 server_metrics_lock = threading.Lock()
 
 
-# Broadcast message to all other clients
+# Broadcast message to all other clients (with a fresh IV each time)
 
 def broadcast_encrypted(plaintext: str, sender_socket: socket.socket):
     """
-    Encrypt plaintext and send the frame to every client except the sender.
-    A new IV is used for every recipient so each ciphertext is unique.
+    Encrypt plaintext and send it to every client except the sender.
+    Each recipient gets their own encryption with a new IV.
     """
     disconnected = []
 
@@ -107,10 +107,15 @@ def handle_client(client_socket: socket.socket, client_address: tuple):
     username, dec_ms = decrypt(name_frame)
     username = username.strip()
 
-    # If username is taken, ask the client to pick another until it's unique
+    # If username is taken, ask the client to pick another one
     while username in clients:
         with clients_lock:
             online = list(clients.keys())
+        if online:
+            online_frame, enc_ms, pl, cl = encrypt(
+                f"[SERVER] Currently online: {', '.join(online)}"
+            )
+            client_socket.sendall(online_frame)
         prompt_frame, enc_ms, pl, cl = encrypt(
             f"[SERVER] '{username}' is already taken. Online users: {', '.join(online)}. Enter a new name:"
         )
@@ -150,7 +155,7 @@ def handle_client(client_socket: socket.socket, client_address: tuple):
             decoded_msg, dec_ms = decrypt(frame)
             client_metrics.record_decrypt(dec_ms)
 
-            # Handle /users command: send the requesting client a list of who's online
+            # Handle /users command
             if decoded_msg.strip() == "/users":
                 with clients_lock:
                     online = list(clients.keys())
@@ -161,11 +166,11 @@ def handle_client(client_socket: socket.socket, client_address: tuple):
                     server_metrics.record_encrypt(enc_ms, pl, cl)
                 continue
 
-            # Handle /quit command: client is asking to leave gracefully
+            # Handle /quit command
             if decoded_msg.strip() == "/quit":
                 print(f"[QUIT] {username} sent /quit")
                 break
-            
+
             # Private message format: @target_user message text
             if decoded_msg.startswith("@"):
                 try:
@@ -262,6 +267,7 @@ def start_server():
     shutdown_event = threading.Event()
 
     def console_listener():
+        """Background thread that checks for /quit on the server terminal."""
         while not shutdown_event.is_set():
             try:
                 cmd = input()

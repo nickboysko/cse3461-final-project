@@ -83,8 +83,20 @@ def start_client():
     client.sendall(name_frame)
     metrics.record_encrypt(enc_ms, pl, cl)
 
-    # If the server says the name is taken it will prompt us to pick another,
-    # so keep re-sending until we get through the handshake
+    # Check if the server sent an initial response (e.g., welcome or duplicate name prompt)
+    first_frame = recv_frame(client)
+    if first_frame:
+        first_msg, dec_ms = decrypt(first_frame)
+        metrics.record_decrypt(dec_ms)
+        print(f"\n{first_msg}")
+        # If it's a taken-name prompt, fall into the retry loop below
+        if "is already taken" in first_msg:
+            name = input("New display name: ").strip()
+            name_frame, enc_ms, pl, cl = encrypt(name)
+            client.sendall(name_frame)
+            metrics.record_encrypt(enc_ms, pl, cl)
+    
+    # Keep trying to get a unique name if the server says it's taken
     while True:
         response_frame = recv_frame(client)
         if response_frame is None:
@@ -127,7 +139,7 @@ def start_client():
             if not message:
                 continue
 
-            # Let the user type /quit to leave cleanly
+            # Let the user type /quit to leave gracefully
             if message.strip() == "/quit":
                 print("[INFO] Quitting...")
                 break

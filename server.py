@@ -19,11 +19,11 @@ clients = {}
 clients_lock = threading.Lock()
 
 def get_local_ip():
-    """Extracts the actual local IP address of the machine."""
+    """Get the actual local IP address of the machine."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # We don't actually connect to 10.255.255.255, 
-        # but this forces the socket to figure out its routing IP.
+        # Connect to a dummy address to figure out which network interface
+        # would be used for outgoing traffic
         s.connect(('10.255.255.255', 1))
         IP = s.getsockname()[0]
     except Exception:
@@ -126,10 +126,10 @@ def start_server():
     server.bind((HOST, PORT))
     server.listen()
     server.settimeout(1.0)
-    print(f"Tell your clients to connect to this IP: {get_local_ip()}")
-
+    
     print(f"[LISTENING] Server is listening on {HOST}:{PORT}")
-    # Added logic to handle Crtl-C
+    print(f"Tell clients to connect to: {get_local_ip()}")
+    # Added logic to handle Ctrl-C
     try:
         while True:
             try:
