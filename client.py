@@ -33,8 +33,13 @@ def receive_messages(client_socket):
 
 def start_client():
     """Main client loop that connects and handles user input."""
+    # Ask for the server IP, or default to localhost
+    server_ip = input("Enter server IP (press Enter for localhost): ").strip()
+    if not server_ip:
+        server_ip = "127.0.0.1"
+        
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((HOST, PORT))
+    client.connect((server_ip, PORT))
 
     # Send username to server, server will check if name is available
     while True:

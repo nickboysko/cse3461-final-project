@@ -32,7 +32,6 @@ from encryption_utils import (
     EncryptionMetrics,
 )
 
-HOST = "127.0.0.1"
 PORT = 5556  # must match server_secure.py
 
 # Per-client metrics object to track encryption performance for this session
@@ -67,18 +66,54 @@ def receive_messages(client_socket: socket.socket):
 # Client entry point
 
 def start_client():
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((HOST, PORT))
+    # Ask for the IP, but default to localhost if they just press Enter
+    server_ip = input("Enter server IP (press Enter for localhost): ").strip()
+    if not server_ip:
+        server_ip = "127.0.0.1"
 
-    print(f"[SECURE CLIENT] Connected to {HOST}:{PORT}")
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect((server_ip, PORT))
+
+    print(f"[SECURE CLIENT] Connected to {server_ip}:{PORT}")
     print(f"[SECURE CLIENT] Transport: AES-256-CBC - all messages encrypted\n")
 
-    # Send encrypted username
     name = input("Enter your display name: ").strip()
 
     name_frame, enc_ms, pl, cl = encrypt(name)
     client.sendall(name_frame)
     metrics.record_encrypt(enc_ms, pl, cl)
+
+    # Check if the server sent an initial response (e.g., welcome or duplicate name prompt)
+    first_frame = recv_frame(client)
+    if first_frame:
+        first_msg, dec_ms = decrypt(first_frame)
+        metrics.record_decrypt(dec_ms)
+        print(f"\n{first_msg}")
+        # If it's a taken-name prompt, fall into the retry loop below
+        if "is already taken" in first_msg:
+            name = input("New display name: ").strip()
+            name_frame, enc_ms, pl, cl = encrypt(name)
+            client.sendall(name_frame)
+            metrics.record_encrypt(enc_ms, pl, cl)
+    
+    # Keep trying to get a unique name if the server says it's taken
+    while True:
+        response_frame = recv_frame(client)
+        if response_frame is None:
+            print("[ERROR] Server disconnected during handshake.")
+            return
+        response, dec_ms = decrypt(response_frame)
+        metrics.record_decrypt(dec_ms)
+        if "[SERVER]" in response and "is already taken" in response:
+            print(f"\n{response}")
+            name = input("New display name: ").strip()
+            name_frame, enc_ms, pl, cl = encrypt(name)
+            client.sendall(name_frame)
+            metrics.record_encrypt(enc_ms, pl, cl)
+        else:
+            # First non-handshake message (e.g. join broadcast) — print it and break
+            print(f"\n[ENCRYPTED] {response}  [{dec_ms:.3f} ms to decrypt]")
+            break
 
     print(f"[INFO] Username sent as AES-256 ciphertext "
           f"({pl} bytes -> {cl} bytes, encrypted in {enc_ms:.4f} ms)")
@@ -103,6 +138,11 @@ def start_client():
             message = input()
             if not message:
                 continue
+
+            # Let the user type /quit to leave gracefully
+            if message.strip() == "/quit":
+                print("[INFO] Quitting...")
+                break
 
             # Encrypt and send
             frame, enc_ms, plain_len, cipher_len = encrypt(message)
