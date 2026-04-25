@@ -52,14 +52,48 @@ def broadcast(message, sender_socket):
             if client in clients:
                 del clients[client]
 
+"""
+Privately send a message to a user
+message - the message to be sent
+target - the user to receive. function will find socket from dictionary
+username - to show where message comes from
+"""
+def private_message(message, target, sender):
+    try:
+        with clients_lock:
+            sender_socket = clients.get(sender)
+            target_socket = clients.get(target, "n")
+
+        if target_socket != "n":
+            formatted = f"[PRIVATE] {sender}: {message}"
+            target_socket.send(formatted.encode("utf-8"))
+        else:
+            sender_socket.send(f"User '{target}' not found.".encode("utf-8"))
+
+    except ValueError:
+        sender_socket.send("Invalid private message format.".encode("utf-8"))
+
+# Simple bool check for username in dictionary.
+def unique_username(username):
+    with clients_lock:
+        if username in clients.keys():
+            return False
+        else:
+            return True
 
 def handle_client(client_socket, client_address):
     """
     Handle one client connection in its own thread.
     """
 
-    # Receive the username as the first message
-    username = client_socket.recv(1024).decode("utf-8").strip()
+    # Receive the username as the first message. Server checks in dictionary for duplicates.
+    while True:
+        username = client_socket.recv(1024).decode("utf-8").strip()
+        if not unique_username(username):
+            client_socket.send("not available".encode("utf-8"))
+        else:
+            client_socket.send("available".encode("utf-8"))
+            break
 
     with clients_lock:
         clients[username] = client_socket
@@ -80,27 +114,24 @@ def handle_client(client_socket, client_address):
             decoded_message = message.decode("utf-8")
 
             if decoded_message.startswith("@"):
-                try:
-                    target_name, private_msg = decoded_message.split(" ", 1)
-                    target_name = target_name[1:]
+                target_name, private_msg = decoded_message.split(" ", 1)
+                target_name = target_name[1:]
 
-                    with clients_lock:
-                        target_socket = clients.get(target_name, "n")
+                private_message(private_msg, target_name, username)
+            elif decoded_message == "/users":
+                formatted = f"[COMMAND] {username}: Users"
+                print(formatted)
 
-                    if target_socket != "n":
-                        formatted = f"[PRIVATE] {username}: {private_msg}"
-                        target_socket.send(formatted.encode("utf-8"))
-                    else:
-                        client_socket.send(f"User '{target_name}' not found.".encode("utf-8"))
+                private_message("User list:", username, username)
+                with clients_lock:
+                    names = list(clients.keys())
+                for name in names:
+                    private_message(name, username, username)
+            else:
+                print(f"[MESSAGE FROM {username}] {decoded_message}")
 
-                except ValueError:
-                    client_socket.send("Invalid private message format.".encode("utf-8"))
-                continue
-
-            print(f"[MESSAGE FROM {username}] {decoded_message}")
-
-            # Add the sender's name and broadcast to all other clients
-            broadcast(f"{username}: {decoded_message}".encode("utf-8"), client_socket)
+                # Add the sender's name and broadcast to all other clients
+                broadcast(f"{username}: {decoded_message}".encode("utf-8"), client_socket)
 
     except Exception as e:
         print(f"[ERROR] Problem with {client_address}: {e}")
