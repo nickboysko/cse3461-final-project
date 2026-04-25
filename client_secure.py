@@ -82,19 +82,6 @@ def start_client():
     name_frame, enc_ms, pl, cl = encrypt(name)
     client.sendall(name_frame)
     metrics.record_encrypt(enc_ms, pl, cl)
-
-    # Check if the server sent an initial response (e.g., welcome or duplicate name prompt)
-    first_frame = recv_frame(client)
-    if first_frame:
-        first_msg, dec_ms = decrypt(first_frame)
-        metrics.record_decrypt(dec_ms)
-        print(f"\n{first_msg}")
-        # If it's a taken-name prompt, fall into the retry loop below
-        if "is already taken" in first_msg:
-            name = input("New display name: ").strip()
-            name_frame, enc_ms, pl, cl = encrypt(name)
-            client.sendall(name_frame)
-            metrics.record_encrypt(enc_ms, pl, cl)
     
     # Keep trying to get a unique name if the server says it's taken
     while True:
@@ -104,16 +91,18 @@ def start_client():
             return
         response, dec_ms = decrypt(response_frame)
         metrics.record_decrypt(dec_ms)
-        if "[SERVER]" in response and "is already taken" in response:
+        if "Name accepted." in response:
+            print(f"\n[ENCRYPTED] {response}  [{dec_ms:.3f} ms to decrypt]")
+            break
+        elif "is already taken" in response:
             print(f"\n{response}")
             name = input("New display name: ").strip()
             name_frame, enc_ms, pl, cl = encrypt(name)
             client.sendall(name_frame)
             metrics.record_encrypt(enc_ms, pl, cl)
         else:
-            # First non-handshake message (e.g. join broadcast) — print it and break
+            # Info messages like the online list, just print and keep waiting
             print(f"\n[ENCRYPTED] {response}  [{dec_ms:.3f} ms to decrypt]")
-            break
 
     print(f"[INFO] Username sent as AES-256 ciphertext "
           f"({pl} bytes -> {cl} bytes, encrypted in {enc_ms:.4f} ms)")

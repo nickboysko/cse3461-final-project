@@ -17,15 +17,18 @@ PORT = 5555
 
 def receive_messages(client_socket):
     """Background thread that listens for incoming messages."""
+    buffer = ""
     while True:
         try:
-            message = client_socket.recv(1024)
-            if not message:
+            chunk = client_socket.recv(1024).decode("utf-8")
+            if not chunk:
                 print("Disconnected from server.")
                 break
-
-            # Display received message
-            print(message.decode("utf-8"))
+            
+            buffer += chunk
+            while "\n" in buffer:
+                message, buffer = buffer.split("\n", 1)
+                print(message)
         except:
             print("Connection to server lost.")
             break
@@ -41,6 +44,11 @@ def start_client():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect((server_ip, PORT))
 
+    # Check if the server sent an online users notice before we pick a name
+    first_msg = client.recv(1024).decode("utf-8").strip()
+    if first_msg:
+        print(f"\n{first_msg}")
+
     # Send username to server, server will check if name is available
     while True:
         name = input("Enter your display name: ")
@@ -52,7 +60,7 @@ def start_client():
             break
 
 
-    print(f"Connected to server at {HOST}:{PORT}")
+    print(f"Connected to server at {server_ip}:{PORT}")
     print(f"Local socket info: {client.getsockname()}")
 
     # Start background thread to receive messages
@@ -67,10 +75,10 @@ def start_client():
         # Main loop: get user input and send to server
         while True:
             message = input()
-            if message == "/exit":
-                print("Exiting...")
+            if message == "/quit":
+                print("Quitting...")
                 return
-            client.send(message.encode("utf-8"))
+            client.send((message + "\n").encode("utf-8"))
     except KeyboardInterrupt:
         print("\nClosing connection...")
     finally:

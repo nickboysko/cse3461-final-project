@@ -107,6 +107,17 @@ def handle_client(client_socket: socket.socket, client_address: tuple):
     username, dec_ms = decrypt(name_frame)
     username = username.strip()
 
+    # Show who's already online before the duplicate check loop starts
+    with clients_lock:
+        online = list(clients.keys())
+    if online:
+        online_frame, enc_ms, pl, cl = encrypt(
+            f"[SERVER] Currently online: {', '.join(online)}"
+        )
+    else:
+        online_frame, enc_ms, pl, cl = encrypt("[SERVER] No other users online yet.")
+    client_socket.sendall(online_frame)
+
     # If username is taken, ask the client to pick another one
     while username in clients:
         with clients_lock:
@@ -126,6 +137,10 @@ def handle_client(client_socket: socket.socket, client_address: tuple):
             return
         username, dec_ms = decrypt(name_frame)
         username = username.strip()
+
+    # Let the client know their name was accepted so it can exit the handshake loop
+    confirm_frame, enc_ms, pl, cl = encrypt("[SERVER] Name accepted.")
+    client_socket.sendall(confirm_frame)
 
     # Track per-client metrics
     client_metrics = EncryptionMetrics()
